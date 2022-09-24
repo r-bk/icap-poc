@@ -1,0 +1,17 @@
+[tasks.doc]
+env = { "RUSTDOCFLAGS" = "--cfg docsrs" }
+toolchain = "nightly"
+command = "cargo"
+args = ["doc", "--all-features", "--no-deps", "--open"]
+workspace = false
+
+[tasks.clippy]
+toolchain = "beta"
+command = "cargo"
+args = ["clippy", "--all-features"]
+
+[tasks.n]
+env = { "RUSTFLAGS" = "-Zprint-type-sizes" }
+toolchain = "nightly"
+command = "cargo"
+args = ["test", "--all-features"]

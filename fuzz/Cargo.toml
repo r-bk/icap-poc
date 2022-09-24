@@ -1,0 +1,31 @@
+[package]
+name = "icap-fuzz"
+version = "0.0.0"
+authors = ["Automatically generated"]
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.icap]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "parse_encapsulated_list"
+path = "fuzz_targets/parse_encapsulated_list.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "decode_chunk_header"
+path = "fuzz_targets/decode_chunk_header.rs"
+test = false
+doc = false
