@@ -1,2 +1,2 @@
-# icap
-Rust ICAP protocol
+# icap-poc
+POC server
