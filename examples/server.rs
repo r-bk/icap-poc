@@ -8,12 +8,14 @@ use http::StatusCode;
 use std::{boxed::Box, io::Result};
 use tracing::instrument;
 
+const DEFAULT_IS_TAG: &str = env!("DEFAULT_IS_TAG");
+
 #[instrument(err)]
 async fn handle_options(mut ctx: Box<ReqCtx>) -> ServiceResult {
     ctx.set_icap_status(StatusCode::OK);
     ctx.append_icap_res_header("Server", "r-bk/icap");
     ctx.append_icap_res_header("Service", "r-bk/icap server example");
-    ctx.append_icap_res_header("ISTag", "\"V-001\"");
+    ctx.append_icap_res_header("ISTag", DEFAULT_IS_TAG);
     ctx.append_icap_res_header("Allow", "204, 206");
     ctx.append_icap_res_header("Methods", "REQMOD, RESPMOD");
     ctx.append_icap_res_header("Preview", "0");

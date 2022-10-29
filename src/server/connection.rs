@@ -2,7 +2,7 @@ use crate::{
     common::Id,
     decoder::{decode_chunk_header, DecodingStatus},
     errors::ConnectionError,
-    server::{AdaptationDecision::*, ReqCtx, ReqCtxBox, RBUF_CAP},
+    server::{AdaptationDecision::*, ReqCtx, ReqCtxBox, DEFAULT_IS_TAG, RBUF_CAP},
     service::IcapService,
     Method, Version,
 };
@@ -314,7 +314,7 @@ where
         debug_assert!(status.is_client_error() || status.is_server_error());
         self.wbuf.clear();
         write!(self.wbuf, "{} {}\r\n", Version::Icap10.as_str(), status)?;
-        write!(self.wbuf, "ISTag: \"r-bk-icap\"\r\n")?;
+        write!(self.wbuf, "ISTag: {}\r\n", DEFAULT_IS_TAG)?;
         write!(self.wbuf, "Connection: close\r\n")?;
         write!(self.wbuf, "Encapsulated: null-body=0\r\n")?;
         write!(self.wbuf, "\r\n")?;

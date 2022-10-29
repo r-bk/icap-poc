@@ -15,6 +15,7 @@ use tracing::{error, trace, warn};
 
 pub(crate) const RBUF_CAP: usize = 8 * 1024;
 pub(crate) const HTTP_BUF_CAP: usize = RBUF_CAP;
+pub(crate) const DEFAULT_IS_TAG: &str = env!("DEFAULT_IS_TAG");
 pub type ReqCtxBox = Box<ReqCtx>;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -454,7 +455,7 @@ impl ReqCtx {
             ("Encapsulated", "null-body=0"),
             ("Methods", "REQMOD, RESPMOD"),
             ("Allow", "204, 206"),
-            ("ISTag", "\"r-bk-icap\""),
+            ("ISTag", DEFAULT_IS_TAG),
             ("Server", "r-bk/icap"),
             ("Preview", "0"),
             ("Transfer-Preview", "*"),
@@ -469,7 +470,7 @@ impl ReqCtx {
     pub(crate) fn ensure_204_headers(&mut self) {
         for (k, v) in &[
             ("Encapsulated", "null-body=0"),
-            ("ISTag", "\"r-bk-icap\""),
+            ("ISTag", DEFAULT_IS_TAG),
             ("Server", "r-bk/icap"),
             ("Connection", "keep-alive"),
         ] {
@@ -481,7 +482,7 @@ impl ReqCtx {
 
     pub(crate) fn ensure_response_headers(&mut self) {
         for (k, v) in &[
-            ("ISTag", "\"r-bk-icap\""),
+            ("ISTag", DEFAULT_IS_TAG),
             ("Server", "r-bk/icap"),
             ("Connection", "keep-alive"),
         ] {
