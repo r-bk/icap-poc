@@ -175,7 +175,7 @@ impl ReqCtx {
 
         let mut preview = None;
         let mut allow: Option<Allow> = None;
-        let null_body;
+        let mut null_body = false;
 
         for h in self.icap_req_headers() {
             if h.name == "Encapsulated" {
@@ -208,10 +208,12 @@ impl ReqCtx {
 
             null_body = last_ee.is_null_body();
             trace!(null_body = null_body, "parsed 'null_body'");
-        } else {
+        } else if self.icap_req.method != Method::Options {
             self.ee_list = ee_list;
             error!("no 'Encapsulated' header found");
             return Err(DecoderError::NoEncapsulatedHdr);
+        } else {
+            trace!("no 'Encapsulated' header found");
         }
 
         if preview.is_none() {
@@ -234,30 +236,36 @@ impl ReqCtx {
     }
 
     fn alloc_buffer_for_headers(&mut self) -> Result<(), DecoderError> {
-        let body_offset = self.ee_list.get_body_offset()?;
-        trace!(offset = body_offset, "found body offset");
+        let (body_offset, missing_bytes) =
+            if let Some(body_offset) = self.ee_list.get_body_offset()? {
+                trace!(offset = body_offset, "found body offset");
 
-        let already_read_bytes = self.rbuf.len();
+                let already_read_bytes = self.rbuf.len();
 
-        debug_assert!(self.icap_req.parsed_len <= already_read_bytes);
-        let header_read_bytes = already_read_bytes - self.icap_req.parsed_len;
+                debug_assert!(self.icap_req.parsed_len <= already_read_bytes);
+                let header_read_bytes = already_read_bytes - self.icap_req.parsed_len;
 
-        let missing_bytes = if body_offset > header_read_bytes {
-            body_offset - header_read_bytes
-        } else {
-            0
-        };
+                let missing_bytes = if body_offset > header_read_bytes {
+                    body_offset - header_read_bytes
+                } else {
+                    0
+                };
 
-        trace!(
-            buf_len = already_read_bytes,
-            header_already_read = header_read_bytes,
-            missing_bytes = missing_bytes,
-            "calculated missing header bytes"
-        );
+                trace!(
+                    buf_len = already_read_bytes,
+                    header_already_read = header_read_bytes,
+                    missing_bytes = missing_bytes,
+                    "calculated missing header bytes"
+                );
 
-        if missing_bytes > 0 {
-            self.rbuf.reserve(missing_bytes);
-        }
+                if missing_bytes > 0 {
+                    self.rbuf.reserve(missing_bytes);
+                }
+
+                (body_offset, missing_bytes)
+            } else {
+                (usize::MAX, 0)
+            };
 
         self.body_offset = body_offset;
         self.header_missing_bytes = missing_bytes;
@@ -270,7 +278,9 @@ impl ReqCtx {
 
         let good_ee = match self.icap_req.method {
             Method::Options => {
-                if self.ee_list.len() != 1 {
+                if self.ee_list.is_empty() {
+                    true
+                } else if self.ee_list.len() != 1 {
                     false
                 } else {
                     matches!(self.ee_list[0], NullBody(off) if off == 0)

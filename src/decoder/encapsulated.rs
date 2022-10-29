@@ -127,35 +127,28 @@ impl EeList {
     }
 
     #[inline]
-    pub unsafe fn get_unchecked(&self, i: usize) -> &EncapsulatedEntity {
-        self.0.get_unchecked(i)
-    }
-
-    #[inline]
     pub unsafe fn get_last(&self) -> &EncapsulatedEntity {
         self.0.get_unchecked(self.0.len() - 1)
     }
 
     #[inline]
-    pub fn get_body_offset(&self) -> Result<usize, DecoderError> {
-        let ee = self.0.last().unwrap(); // the list is assumed to be parsed
-        let body_offset = match ee {
-            EncapsulatedEntity::ReqBody(off) => *off,
-            EncapsulatedEntity::ResBody(off) => *off,
-            EncapsulatedEntity::NullBody(off) => *off,
-            _ => {
-                error!(ee_list = ?self.0, "unexpected last encapsulated entity");
-                return Err(DecoderError::BadEncapsulatedHdr(
-                    "unexpected last encapsulated entity",
-                ));
-            }
-        };
-        Ok(body_offset)
-    }
-
-    #[inline]
-    pub fn last(&self) -> Option<&EncapsulatedEntity> {
-        self.0.last()
+    pub fn get_body_offset(&self) -> Result<Option<usize>, DecoderError> {
+        if let Some(ee) = self.0.last() {
+            let body_offset = match ee {
+                EncapsulatedEntity::ReqBody(off) => *off,
+                EncapsulatedEntity::ResBody(off) => *off,
+                EncapsulatedEntity::NullBody(off) => *off,
+                _ => {
+                    error!(ee_list = ?self.0, "unexpected last encapsulated entity");
+                    return Err(DecoderError::BadEncapsulatedHdr(
+                        "unexpected last encapsulated entity",
+                    ));
+                }
+            };
+            Ok(Some(body_offset))
+        } else {
+            Ok(None)
+        }
     }
 }
 
