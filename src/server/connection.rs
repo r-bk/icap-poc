@@ -12,12 +12,16 @@ use std::{
     fmt::Write,
     io::{self, ErrorKind},
     slice,
+    time::Duration,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
 };
-use tracing::{debug, error, instrument, trace, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
+
+const READ_TIMEOUT: Duration = Duration::from_secs(10);
+const CONNECTION_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug)]
 enum ProcessingDecision {
@@ -69,6 +73,9 @@ where
                 }
             };
             ctx.clear();
+
+            // allow other connections to be scheduled
+            tokio::task::yield_now().await;
         }
         trace!("shutting down connection");
         if let Err(e) = self.sock.shutdown().await {
@@ -83,6 +90,10 @@ where
             Err(ConnectionError::Decoder(e)) => {
                 error!("failed to decode message: {}", e);
                 return self.send_status(StatusCode::BAD_REQUEST).await;
+            }
+            Err(ConnectionError::Io(e)) if e.kind() == ErrorKind::TimedOut => {
+                info!("connection timed-out");
+                return Ok(ProcessingDecision::Shutdown);
             }
             _ => return Ok(ProcessingDecision::Shutdown),
         };
@@ -293,17 +304,19 @@ where
 
     #[instrument(skip(self, ctx))]
     async fn init_ctx(&mut self, mut ctx: ReqCtxBox) -> Result<ReqCtxBox, ConnectionError> {
+        let mut timeout = CONNECTION_TIMEOUT;
         loop {
             match ctx.init()? {
                 DecodingStatus::Complete => {
                     return Ok(ctx);
                 }
                 DecodingStatus::Partial => {
-                    let n = self.recv(&mut ctx.rbuf).await?;
+                    let n = self.recv(&mut ctx.rbuf, timeout).await?;
                     if n == 0 {
                         debug!("incoming connection closed");
                         return Err(io::Error::from(ErrorKind::ConnectionReset).into());
                     }
+                    timeout = READ_TIMEOUT;
                 }
             }
         }
@@ -334,7 +347,13 @@ where
             let slc = unsafe { slice::from_raw_parts_mut(chunk.as_mut_ptr(), chunk.len()) };
             debug_assert!(slc.len() >= missing_bytes);
             trace!("reading up to {} bytes", slc.len());
-            let n = self.sock.read(slc).await?;
+            let n = match tokio::time::timeout(READ_TIMEOUT, self.sock.read(slc)).await {
+                Ok(res) => res?,
+                Err(_) => {
+                    info!("socket read timeout {:?}", READ_TIMEOUT);
+                    return Ok(ProcessingDecision::Shutdown);
+                }
+            };
             unsafe { ctx.rbuf.advance_mut(n) };
             trace!("received {} bytes", n);
             missing_bytes -= missing_bytes.min(n);
@@ -361,7 +380,7 @@ where
             let chunk_hdr = match decode_chunk_header(body_slc) {
                 Ok(None) => {
                     trace!("partial chunk header");
-                    let n = self.recv(&mut ctx.rbuf).await?;
+                    let n = self.recv(&mut ctx.rbuf, READ_TIMEOUT).await?;
                     if n == 0 {
                         debug!("incoming connection closed at preview chunk");
                         return Ok(ProcessingDecision::Shutdown);
@@ -382,7 +401,7 @@ where
 
             if body_slc.len() < chunk_hdr.line_len + 2 {
                 trace!("missing final CRLF");
-                let n = self.recv(&mut ctx.rbuf).await?;
+                let n = self.recv(&mut ctx.rbuf, READ_TIMEOUT).await?;
                 if n == 0 {
                     debug!("incoming connection closed at preview final CRLF");
                     return Ok(ProcessingDecision::Shutdown);
@@ -400,14 +419,20 @@ where
         }
     }
 
-    async fn recv(&mut self, rbuf: &mut BytesMut) -> io::Result<usize> {
+    async fn recv(&mut self, rbuf: &mut BytesMut, timeout: Duration) -> io::Result<usize> {
         if rbuf.capacity() <= 1024 {
             rbuf.reserve(RBUF_CAP);
         }
         let chunk = rbuf.chunk_mut();
         let slc = unsafe { slice::from_raw_parts_mut(chunk.as_mut_ptr(), chunk.len()) };
         trace!("reading up to {} bytes", slc.len());
-        let n = self.sock.read(slc).await?;
+        let n = match tokio::time::timeout(timeout, self.sock.read(slc)).await {
+            Ok(res) => res?,
+            Err(_) => {
+                info!("socket read timeout {:?}", timeout);
+                return Err(io::Error::from(ErrorKind::TimedOut));
+            }
+        };
         unsafe { rbuf.advance_mut(n) };
         trace!("received {} bytes", n);
         Ok(n)
