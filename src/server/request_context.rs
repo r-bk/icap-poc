@@ -11,7 +11,7 @@ use bytes::BytesMut;
 use http::header::HeaderValue;
 use http::StatusCode;
 use std::boxed::Box;
-use tracing::{error, trace, warn};
+use tracing::{debug, error, trace, warn};
 
 pub(crate) const RBUF_CAP: usize = 8 * 1024;
 pub(crate) const HTTP_BUF_CAP: usize = RBUF_CAP;
@@ -91,6 +91,8 @@ impl ReqCtx {
             }
         }
 
+        debug!("{} {}", self.icap_req.method, self.icap_req.uri);
+
         for idx in 0..self.ee_list.len() {
             let expected_off = match idx {
                 0 => 0,
@@ -107,6 +109,7 @@ impl ReqCtx {
                         );
                     }
                     self.decode_http_request(expected_off)?;
+                    debug!("{} {}", self.http_req.method, self.http_req.uri);
                 }
                 ResHdr(off) => {
                     if off != expected_off {
@@ -117,6 +120,13 @@ impl ReqCtx {
                         );
                     }
                     self.decode_http_response(expected_off)?;
+                    debug!(
+                        "{} {:?} ({} {})",
+                        self.http_res.status,
+                        self.http_res.version,
+                        self.http_req.method,
+                        self.http_req.uri
+                    );
                 }
                 _ => (),
             }
