@@ -1,7 +1,7 @@
 use crate::{common::CONN_ID, server::Connection, service::IcapService};
 use std::{io::Result, net::SocketAddr};
 use tokio::{
-    net::{TcpListener, ToSocketAddrs},
+    net::{TcpListener, TcpSocket},
     task,
 };
 use tracing::{debug, instrument, trace};
@@ -26,11 +26,20 @@ where
     <S as IcapService>::RQF: Send,
     <S as IcapService>::RSF: Send,
 {
-    pub async fn bind<A: ToSocketAddrs>(svc: S, addr: A) -> Result<Self> {
-        let sock = TcpListener::bind(addr).await?;
+    pub async fn bind(svc: S, addr: SocketAddr, backlog: u32) -> Result<Self> {
+        let sock = if addr.is_ipv4() {
+            TcpSocket::new_v4()?
+        } else {
+            TcpSocket::new_v6()?
+        };
+
+        sock.set_reuseaddr(true)?;
+        sock.set_reuseport(true)?;
+        sock.bind(addr)?;
+
         let local_addr = sock.local_addr()?;
         Ok(Self {
-            sock,
+            sock: sock.listen(backlog)?,
             local_addr,
             svc,
         })

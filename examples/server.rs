@@ -48,7 +48,9 @@ async fn main() -> Result<()> {
 
     let svc = service_fn(cfg, handle_options, handle_reqmod, handle_respmod);
 
-    let l = TcpAcceptor::bind(svc, "127.0.0.1:1344").await.unwrap();
+    let l = TcpAcceptor::bind(svc, "127.0.0.1:1344".parse().unwrap(), 1024)
+        .await
+        .unwrap();
 
     l.run().await
 }
