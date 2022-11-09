@@ -309,10 +309,6 @@ impl ReqCtx {
             Method::RespMod => {
                 is_req = true;
                 match self.ee_list.len() {
-                    2 => {
-                        matches!(self.ee_list[0], ResHdr(off) if off == 0)
-                            && matches!(self.ee_list[1], ResBody(_) | NullBody(_))
-                    }
                     3 => {
                         matches!(self.ee_list[0], ReqHdr(off) if off == 0)
                             && matches!(self.ee_list[1], ResHdr(_))
@@ -360,12 +356,8 @@ impl ReqCtx {
     }
 
     #[inline]
-    pub fn http_req(&self) -> Option<&HttpRequest> {
-        if self.http_req.parsed_len != 0 {
-            Some(&self.http_req)
-        } else {
-            None
-        }
+    pub fn http_req(&self) -> &HttpRequest {
+        &self.http_req
     }
 
     #[inline]
@@ -377,12 +369,8 @@ impl ReqCtx {
     }
 
     #[inline]
-    pub fn http_res(&self) -> Option<&HttpResponse> {
-        if self.http_res.parsed_len != 0 {
-            Some(&self.http_res)
-        } else {
-            None
-        }
+    pub fn http_res(&self) -> &HttpResponse {
+        &self.http_res
     }
 
     #[inline]

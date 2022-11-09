@@ -9,6 +9,11 @@ pub struct HttpResponse {
 }
 
 impl HttpResponse {
+    #[inline]
+    pub fn is_parsed(&self) -> bool {
+        self.parsed_len != 0
+    }
+
     pub(crate) fn clear(&mut self) {
         self.version = Default::default();
         self.status = Default::default();

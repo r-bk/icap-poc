@@ -10,6 +10,11 @@ pub struct HttpRequest {
 }
 
 impl HttpRequest {
+    #[inline]
+    pub fn is_parsed(&self) -> bool {
+        self.parsed_len != 0
+    }
+
     pub(crate) fn clear(&mut self) {
         self.method = Default::default();
         self.headers.clear();
