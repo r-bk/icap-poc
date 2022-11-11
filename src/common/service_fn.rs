@@ -1,8 +1,8 @@
 use crate::{
-    server::{ReqCtx, ServerCfg},
+    server::ReqCtx,
     service::{IcapService, ServiceResult},
 };
-use std::{boxed::Box, future::Future, sync::Arc};
+use std::{boxed::Box, future::Future};
 
 pub struct ServiceFn<OP, OPF, RQ, RQF, RS, RSF>
 where
@@ -13,8 +13,6 @@ where
     RSF: Future<Output = ServiceResult> + Send,
     RS: Clone + FnMut(Box<ReqCtx>) -> RSF,
 {
-    cfg: Arc<ServerCfg>,
-
     handle_options: OP,
     handle_reqmod: RQ,
     handle_respmod: RS,
@@ -32,11 +30,6 @@ where
     type OPF = OPF;
     type RQF = RQF;
     type RSF = RSF;
-
-    #[inline]
-    fn server_cfg(&self) -> Arc<ServerCfg> {
-        self.cfg.clone()
-    }
 
     #[inline]
     fn handle_options(&mut self, ctx: Box<ReqCtx>) -> Self::OPF {
@@ -66,7 +59,6 @@ where
     #[inline]
     fn clone(&self) -> Self {
         Self {
-            cfg: self.cfg.clone(),
             handle_options: self.handle_options.clone(),
             handle_reqmod: self.handle_reqmod.clone(),
             handle_respmod: self.handle_respmod.clone(),
@@ -76,7 +68,6 @@ where
 
 #[inline]
 pub fn service_fn<OP, OPF, RQ, RQF, RS, RSF>(
-    cfg: Arc<ServerCfg>,
     handle_options: OP,
     handle_reqmod: RQ,
     handle_respmod: RS,
@@ -90,7 +81,6 @@ where
     RS: Clone + FnMut(Box<ReqCtx>) -> RSF,
 {
     ServiceFn {
-        cfg,
         handle_options,
         handle_reqmod,
         handle_respmod,

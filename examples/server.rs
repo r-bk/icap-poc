@@ -1,5 +1,5 @@
 use icap_poc::{
-    server::{AdaptationDecision::*, ReqCtx, ServerCfg, TcpAcceptor},
+    server::{AdaptationDecision::*, ReqCtx, TcpAcceptor},
     service::ServiceResult,
     service_fn,
 };
@@ -44,9 +44,7 @@ async fn handle_respmod(mut ctx: Box<ReqCtx>) -> ServiceResult {
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    let cfg = ServerCfg::builder().build();
-
-    let svc = service_fn(cfg, handle_options, handle_reqmod, handle_respmod);
+    let svc = service_fn(handle_options, handle_reqmod, handle_respmod);
 
     let l = TcpAcceptor::bind(svc, "127.0.0.1:1344".parse().unwrap(), 1024)
         .await
