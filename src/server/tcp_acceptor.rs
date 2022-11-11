@@ -1,5 +1,5 @@
 use crate::{common::CONN_ID, server::Connection, service::IcapService};
-use std::{io::Result, net::SocketAddr};
+use std::{io::Result, marker::PhantomData, net::SocketAddr, sync::Arc};
 use tokio::{
     net::{TcpListener, TcpSocket},
     task,
@@ -7,24 +7,27 @@ use tokio::{
 use tracing::{debug, instrument, trace};
 
 #[derive(Debug)]
-pub struct TcpAcceptor<S>
+pub struct TcpAcceptor<GCTX, S>
 where
-    S: IcapService + Send + 'static,
-    <S as IcapService>::OPF: Send,
-    <S as IcapService>::RQF: Send,
-    <S as IcapService>::RSF: Send,
+    GCTX: Send + Sync,
+    S: IcapService<GCTX> + Send + 'static,
+    <S as IcapService<GCTX>>::OPF: Send,
+    <S as IcapService<GCTX>>::RQF: Send,
+    <S as IcapService<GCTX>>::RSF: Send,
 {
     sock: TcpListener,
     local_addr: SocketAddr,
     svc: S,
+    phantom: PhantomData<Arc<GCTX>>,
 }
 
-impl<S> TcpAcceptor<S>
+impl<GCTX, S> TcpAcceptor<GCTX, S>
 where
-    S: IcapService + Send + 'static,
-    <S as IcapService>::OPF: Send,
-    <S as IcapService>::RQF: Send,
-    <S as IcapService>::RSF: Send,
+    GCTX: Send + Sync,
+    S: IcapService<GCTX> + Send + 'static,
+    <S as IcapService<GCTX>>::OPF: Send,
+    <S as IcapService<GCTX>>::RQF: Send,
+    <S as IcapService<GCTX>>::RSF: Send,
 {
     pub async fn bind(svc: S, addr: SocketAddr, backlog: u32) -> Result<Self> {
         let sock = if addr.is_ipv4() {
@@ -42,6 +45,7 @@ where
             sock: sock.listen(backlog)?,
             local_addr,
             svc,
+            phantom: PhantomData,
         })
     }
 

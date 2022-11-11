@@ -11,7 +11,9 @@ use http::StatusCode;
 use std::{
     fmt::Write,
     io::{self, ErrorKind},
+    marker::PhantomData,
     slice,
+    sync::Arc,
     time::Duration,
 };
 use tokio::{
@@ -24,27 +26,29 @@ const READ_TIMEOUT: Duration = Duration::from_secs(10);
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug)]
-enum ProcessingDecision {
-    Continue(ReqCtxBox),
+enum ProcessingDecision<GCTX: Send + Sync> {
+    Continue(ReqCtxBox<GCTX>),
     Shutdown,
 }
 
-type ConnectionResult = Result<ProcessingDecision, ConnectionError>;
+type ConnectionResult<GCTX> = Result<ProcessingDecision<GCTX>, ConnectionError>;
 
 #[derive(Debug)]
-pub struct Connection<S> {
+pub struct Connection<GCTX, S> {
     pub id: Id,
     sock: TcpStream,
     wbuf: BytesMut,
     svc: S,
+    phantom: PhantomData<Arc<GCTX>>,
 }
 
-impl<S> Connection<S>
+impl<GCTX, S> Connection<GCTX, S>
 where
-    S: IcapService,
-    <S as IcapService>::OPF: Send,
-    <S as IcapService>::RQF: Send,
-    <S as IcapService>::RSF: Send,
+    GCTX: Send + Sync,
+    S: IcapService<GCTX>,
+    <S as IcapService<GCTX>>::OPF: Send,
+    <S as IcapService<GCTX>>::RQF: Send,
+    <S as IcapService<GCTX>>::RSF: Send,
 {
     pub fn new(id: Id, sock: TcpStream, svc: S) -> Self {
         Connection {
@@ -52,6 +56,7 @@ where
             sock,
             wbuf: BytesMut::with_capacity(512),
             svc,
+            phantom: PhantomData,
         }
     }
 
@@ -61,7 +66,7 @@ where
             error!("failed to set TCP_NODELAY");
         }
 
-        let mut ctx = ReqCtx::new_box();
+        let mut ctx = ReqCtx::new_box(self.svc.take_global_ctx());
         loop {
             ctx.msgs_cnt += 1;
             ctx = match self.process_message(ctx).await {
@@ -84,7 +89,7 @@ where
     }
 
     #[instrument(name = "message", skip(self, ctx), fields(n = ctx.msgs_cnt), err)]
-    async fn process_message(&mut self, mut ctx: ReqCtxBox) -> ConnectionResult {
+    async fn process_message(&mut self, mut ctx: ReqCtxBox<GCTX>) -> ConnectionResult<GCTX> {
         ctx = match self.init_ctx(ctx).await {
             Ok(ctx) => ctx,
             Err(ConnectionError::Decoder(e)) => {
@@ -124,7 +129,7 @@ where
         }
     }
 
-    async fn process_options(&mut self, ctx: ReqCtxBox) -> ConnectionResult {
+    async fn process_options(&mut self, ctx: ReqCtxBox<GCTX>) -> ConnectionResult<GCTX> {
         let mut ctx = match self.svc.handle_options(ctx).await {
             Ok(ctx) => ctx,
             Err(e) => {
@@ -146,7 +151,7 @@ where
         Ok(ProcessingDecision::Continue(ctx))
     }
 
-    async fn process_reqmod(&mut self, ctx: ReqCtxBox) -> ConnectionResult {
+    async fn process_reqmod(&mut self, ctx: ReqCtxBox<GCTX>) -> ConnectionResult<GCTX> {
         let ctx = match self.svc.handle_reqmod(ctx).await {
             Ok(ctx) => ctx,
             Err(e) => {
@@ -157,7 +162,7 @@ where
         self.process_decision(ctx).await
     }
 
-    async fn process_respmod(&mut self, ctx: ReqCtxBox) -> ConnectionResult {
+    async fn process_respmod(&mut self, ctx: ReqCtxBox<GCTX>) -> ConnectionResult<GCTX> {
         let ctx = match self.svc.handle_respmod(ctx).await {
             Ok(ctx) => ctx,
             Err(e) => {
@@ -168,7 +173,7 @@ where
         self.process_decision(ctx).await
     }
 
-    async fn process_decision(&mut self, ctx: ReqCtxBox) -> ConnectionResult {
+    async fn process_decision(&mut self, ctx: ReqCtxBox<GCTX>) -> ConnectionResult<GCTX> {
         let decision = match ctx.decision {
             Some(d) => d,
             None => {
@@ -183,7 +188,7 @@ where
         }
     }
 
-    async fn send_204(&mut self, mut ctx: ReqCtxBox) -> ConnectionResult {
+    async fn send_204(&mut self, mut ctx: ReqCtxBox<GCTX>) -> ConnectionResult<GCTX> {
         ctx.ensure_204_headers();
         self.wbuf.clear();
         write!(
@@ -198,7 +203,7 @@ where
         Ok(ProcessingDecision::Continue(ctx))
     }
 
-    async fn append_headers(&mut self, mut ctx: ReqCtxBox) -> ConnectionResult {
+    async fn append_headers(&mut self, mut ctx: ReqCtxBox<GCTX>) -> ConnectionResult<GCTX> {
         ctx.ensure_response_headers();
         self.wbuf.clear();
         ctx.http_buf.clear();
@@ -259,7 +264,7 @@ where
         Ok(ProcessingDecision::Continue(ctx))
     }
 
-    async fn custom_response(&mut self, mut ctx: ReqCtxBox) -> ConnectionResult {
+    async fn custom_response(&mut self, mut ctx: ReqCtxBox<GCTX>) -> ConnectionResult<GCTX> {
         ctx.ensure_response_headers();
         self.wbuf.clear();
         ctx.http_buf.clear();
@@ -303,7 +308,10 @@ where
     }
 
     #[instrument(skip(self, ctx))]
-    async fn init_ctx(&mut self, mut ctx: ReqCtxBox) -> Result<ReqCtxBox, ConnectionError> {
+    async fn init_ctx(
+        &mut self,
+        mut ctx: ReqCtxBox<GCTX>,
+    ) -> Result<ReqCtxBox<GCTX>, ConnectionError> {
         let mut timeout = CONNECTION_TIMEOUT;
         loop {
             match ctx.init()? {
@@ -323,7 +331,7 @@ where
     }
 
     #[instrument(skip(self))]
-    async fn send_status(&mut self, status: StatusCode) -> ConnectionResult {
+    async fn send_status(&mut self, status: StatusCode) -> ConnectionResult<GCTX> {
         debug_assert!(status.is_client_error() || status.is_server_error());
         self.wbuf.clear();
         write!(self.wbuf, "{} {}\r\n", Version::Icap10.as_str(), status)?;
@@ -336,7 +344,10 @@ where
     }
 
     #[instrument(skip(self, ctx), err)]
-    async fn recv_missing_header_bytes(&mut self, mut ctx: ReqCtxBox) -> ConnectionResult {
+    async fn recv_missing_header_bytes(
+        &mut self,
+        mut ctx: ReqCtxBox<GCTX>,
+    ) -> ConnectionResult<GCTX> {
         let mut missing_bytes = ctx.header_missing_bytes;
         loop {
             if missing_bytes == 0 {
@@ -366,7 +377,10 @@ where
     }
 
     #[instrument(skip(self, ctx), err)]
-    async fn recv_preview_zero_chunk(&mut self, mut ctx: ReqCtxBox) -> ConnectionResult {
+    async fn recv_preview_zero_chunk(
+        &mut self,
+        mut ctx: ReqCtxBox<GCTX>,
+    ) -> ConnectionResult<GCTX> {
         let body_buf_offset = ctx.icap_req.parsed_len + ctx.body_offset;
         debug_assert!(ctx.rbuf.len() >= body_buf_offset);
         trace!(

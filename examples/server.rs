@@ -1,6 +1,5 @@
 use icap_poc::{
-    server::{AdaptationDecision::*, ReqCtx, TcpAcceptor},
-    service::ServiceResult,
+    server::{AdaptationDecision::*, TcpAcceptor},
     service_fn,
 };
 
@@ -9,6 +8,9 @@ use std::{boxed::Box, io::Result};
 use tracing::instrument;
 
 const DEFAULT_IS_TAG: &str = env!("DEFAULT_IS_TAG");
+
+type ReqCtx = icap_poc::server::ReqCtx<()>;
+type ServiceResult = icap_poc::service::ServiceResult<()>;
 
 #[instrument(err)]
 async fn handle_options(mut ctx: Box<ReqCtx>) -> ServiceResult {
@@ -44,7 +46,7 @@ async fn handle_respmod(mut ctx: Box<ReqCtx>) -> ServiceResult {
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    let svc = service_fn(handle_options, handle_reqmod, handle_respmod);
+    let svc = service_fn(None, handle_options, handle_reqmod, handle_respmod);
 
     let l = TcpAcceptor::bind(svc, "127.0.0.1:1344".parse().unwrap(), 1024)
         .await

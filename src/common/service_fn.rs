@@ -2,63 +2,74 @@ use crate::{
     server::ReqCtx,
     service::{IcapService, ServiceResult},
 };
-use std::{boxed::Box, future::Future};
+use std::{boxed::Box, future::Future, sync::Arc};
 
-pub struct ServiceFn<OP, OPF, RQ, RQF, RS, RSF>
+pub struct ServiceFn<GCTX, OP, OPF, RQ, RQF, RS, RSF>
 where
-    OPF: Future<Output = ServiceResult> + Send,
-    OP: Clone + FnMut(Box<ReqCtx>) -> OPF,
-    RQF: Future<Output = ServiceResult> + Send,
-    RQ: Clone + FnMut(Box<ReqCtx>) -> RQF,
-    RSF: Future<Output = ServiceResult> + Send,
-    RS: Clone + FnMut(Box<ReqCtx>) -> RSF,
+    GCTX: Send + Sync,
+    OPF: Future<Output = ServiceResult<GCTX>> + Send,
+    OP: Clone + FnMut(Box<ReqCtx<GCTX>>) -> OPF,
+    RQF: Future<Output = ServiceResult<GCTX>> + Send,
+    RQ: Clone + FnMut(Box<ReqCtx<GCTX>>) -> RQF,
+    RSF: Future<Output = ServiceResult<GCTX>> + Send,
+    RS: Clone + FnMut(Box<ReqCtx<GCTX>>) -> RSF,
 {
+    global_ctx: Option<Arc<GCTX>>,
     handle_options: OP,
     handle_reqmod: RQ,
     handle_respmod: RS,
 }
 
-impl<OP, OPF, RQ, RQF, RS, RSF> IcapService for ServiceFn<OP, OPF, RQ, RQF, RS, RSF>
+impl<GCTX, OP, OPF, RQ, RQF, RS, RSF> IcapService<GCTX>
+    for ServiceFn<GCTX, OP, OPF, RQ, RQF, RS, RSF>
 where
-    OPF: Future<Output = ServiceResult> + Send,
-    OP: Clone + FnMut(Box<ReqCtx>) -> OPF,
-    RQF: Future<Output = ServiceResult> + Send,
-    RQ: Clone + FnMut(Box<ReqCtx>) -> RQF,
-    RSF: Future<Output = ServiceResult> + Send,
-    RS: Clone + FnMut(Box<ReqCtx>) -> RSF,
+    GCTX: Send + Sync,
+    OPF: Future<Output = ServiceResult<GCTX>> + Send,
+    OP: Clone + FnMut(Box<ReqCtx<GCTX>>) -> OPF,
+    RQF: Future<Output = ServiceResult<GCTX>> + Send,
+    RQ: Clone + FnMut(Box<ReqCtx<GCTX>>) -> RQF,
+    RSF: Future<Output = ServiceResult<GCTX>> + Send,
+    RS: Clone + FnMut(Box<ReqCtx<GCTX>>) -> RSF,
 {
     type OPF = OPF;
     type RQF = RQF;
     type RSF = RSF;
 
     #[inline]
-    fn handle_options(&mut self, ctx: Box<ReqCtx>) -> Self::OPF {
+    fn take_global_ctx(&mut self) -> Option<Arc<GCTX>> {
+        self.global_ctx.take()
+    }
+
+    #[inline]
+    fn handle_options(&mut self, ctx: Box<ReqCtx<GCTX>>) -> Self::OPF {
         (self.handle_options)(ctx)
     }
 
     #[inline]
-    fn handle_reqmod(&mut self, ctx: Box<ReqCtx>) -> Self::RQF {
+    fn handle_reqmod(&mut self, ctx: Box<ReqCtx<GCTX>>) -> Self::RQF {
         (self.handle_reqmod)(ctx)
     }
 
     #[inline]
-    fn handle_respmod(&mut self, ctx: Box<ReqCtx>) -> Self::RSF {
+    fn handle_respmod(&mut self, ctx: Box<ReqCtx<GCTX>>) -> Self::RSF {
         (self.handle_respmod)(ctx)
     }
 }
 
-impl<OP, OPF, RQ, RQF, RS, RSF> Clone for ServiceFn<OP, OPF, RQ, RQF, RS, RSF>
+impl<GCTX, OP, OPF, RQ, RQF, RS, RSF> Clone for ServiceFn<GCTX, OP, OPF, RQ, RQF, RS, RSF>
 where
-    OPF: Future<Output = ServiceResult> + Send,
-    OP: Clone + FnMut(Box<ReqCtx>) -> OPF,
-    RQF: Future<Output = ServiceResult> + Send,
-    RQ: Clone + FnMut(Box<ReqCtx>) -> RQF,
-    RSF: Future<Output = ServiceResult> + Send,
-    RS: Clone + FnMut(Box<ReqCtx>) -> RSF,
+    GCTX: Send + Sync,
+    OPF: Future<Output = ServiceResult<GCTX>> + Send,
+    OP: Clone + FnMut(Box<ReqCtx<GCTX>>) -> OPF,
+    RQF: Future<Output = ServiceResult<GCTX>> + Send,
+    RQ: Clone + FnMut(Box<ReqCtx<GCTX>>) -> RQF,
+    RSF: Future<Output = ServiceResult<GCTX>> + Send,
+    RS: Clone + FnMut(Box<ReqCtx<GCTX>>) -> RSF,
 {
     #[inline]
     fn clone(&self) -> Self {
         Self {
+            global_ctx: self.global_ctx.clone(),
             handle_options: self.handle_options.clone(),
             handle_reqmod: self.handle_reqmod.clone(),
             handle_respmod: self.handle_respmod.clone(),
@@ -67,20 +78,23 @@ where
 }
 
 #[inline]
-pub fn service_fn<OP, OPF, RQ, RQF, RS, RSF>(
+pub fn service_fn<GCTX, OP, OPF, RQ, RQF, RS, RSF>(
+    global_ctx: Option<Arc<GCTX>>,
     handle_options: OP,
     handle_reqmod: RQ,
     handle_respmod: RS,
-) -> ServiceFn<OP, OPF, RQ, RQF, RS, RSF>
+) -> ServiceFn<GCTX, OP, OPF, RQ, RQF, RS, RSF>
 where
-    OPF: Future<Output = ServiceResult> + Send,
-    OP: Clone + FnMut(Box<ReqCtx>) -> OPF,
-    RQF: Future<Output = ServiceResult> + Send,
-    RQ: Clone + FnMut(Box<ReqCtx>) -> RQF,
-    RSF: Future<Output = ServiceResult> + Send,
-    RS: Clone + FnMut(Box<ReqCtx>) -> RSF,
+    GCTX: Send + Sync,
+    OPF: Future<Output = ServiceResult<GCTX>> + Send,
+    OP: Clone + FnMut(Box<ReqCtx<GCTX>>) -> OPF,
+    RQF: Future<Output = ServiceResult<GCTX>> + Send,
+    RQ: Clone + FnMut(Box<ReqCtx<GCTX>>) -> RQF,
+    RSF: Future<Output = ServiceResult<GCTX>> + Send,
+    RS: Clone + FnMut(Box<ReqCtx<GCTX>>) -> RSF,
 {
     ServiceFn {
+        global_ctx,
         handle_options,
         handle_reqmod,
         handle_respmod,

@@ -10,13 +10,13 @@ use crate::{
 use bytes::BytesMut;
 use http::header::HeaderValue;
 use http::StatusCode;
-use std::boxed::Box;
+use std::{boxed::Box, ops::Deref, sync::Arc};
 use tracing::{debug, error, trace, warn};
 
 pub(crate) const RBUF_CAP: usize = 8 * 1024;
 pub(crate) const HTTP_BUF_CAP: usize = RBUF_CAP;
 pub(crate) const DEFAULT_IS_TAG: &str = env!("DEFAULT_IS_TAG");
-pub type ReqCtxBox = Box<ReqCtx>;
+pub type ReqCtxBox<GCTX> = Box<ReqCtx<GCTX>>;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum AdaptationDecision {
@@ -30,7 +30,8 @@ pub enum AdaptationDecision {
 }
 
 #[derive(Debug)]
-pub struct ReqCtx {
+pub struct ReqCtx<GCTX: Send + Sync> {
+    pub(crate) global_ctx: Option<Arc<GCTX>>,
     pub(crate) msgs_cnt: usize,
     pub(crate) rbuf: BytesMut,
     pub(crate) http_buf: BytesMut,
@@ -52,15 +53,21 @@ pub struct ReqCtx {
     pub(crate) header_missing_bytes: usize,
 }
 
-impl ReqCtx {
+impl<GCTX> ReqCtx<GCTX>
+where
+    GCTX: Send + Sync,
+{
     #[inline]
-    pub(crate) fn new() -> Self {
-        Self::default()
+    pub(crate) fn new(global_ctx: Option<Arc<GCTX>>) -> Self {
+        Self {
+            global_ctx,
+            ..Default::default()
+        }
     }
 
     #[inline]
-    pub(crate) fn new_box() -> ReqCtxBox {
-        Box::new(Self::new())
+    pub(crate) fn new_box(global_ctx: Option<Arc<GCTX>>) -> ReqCtxBox<GCTX> {
+        Box::new(Self::new(global_ctx))
     }
 
     pub(crate) fn init(&mut self) -> Result<DecodingStatus, DecoderError> {
@@ -342,6 +349,26 @@ impl ReqCtx {
         Ok(())
     }
 
+    /// Returns the global context.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if global context was not set.
+    #[inline]
+    pub fn global_ctx(&self) -> &GCTX {
+        Deref::deref(self.global_ctx.as_ref().unwrap())
+    }
+
+    /// Returns a clone of the global context Arc.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if global context was not set.
+    #[inline]
+    pub fn global_ctx_arc(&self) -> Arc<GCTX> {
+        self.global_ctx.as_ref().unwrap().clone()
+    }
+
     #[inline]
     pub fn icap_req(&self) -> &IcapRequest {
         &self.icap_req
@@ -491,10 +518,14 @@ impl ReqCtx {
     }
 }
 
-impl Default for ReqCtx {
+impl<GCTX> Default for ReqCtx<GCTX>
+where
+    GCTX: Send + Sync,
+{
     #[inline]
     fn default() -> Self {
         Self {
+            global_ctx: None,
             msgs_cnt: 0,
             rbuf: BytesMut::with_capacity(RBUF_CAP),
             http_buf: BytesMut::with_capacity(HTTP_BUF_CAP),
