@@ -8,7 +8,7 @@ use crate::{
     HttpResponse, Method,
 };
 use bytes::BytesMut;
-use http::header::HeaderValue;
+use http::header::{HeaderName, HeaderValue};
 use http::StatusCode;
 use std::{boxed::Box, ops::Deref, sync::Arc};
 use tracing::{debug, error, trace, warn};
@@ -445,6 +445,11 @@ where
     }
 
     #[inline]
+    pub fn append_icap_res_header_raw(&mut self, name: HeaderName, val: HeaderValue) {
+        self.out_icap_headers.append(name, val);
+    }
+
+    #[inline]
     pub fn append_http_header(&mut self, name: &'static str, val: &'static str) {
         self.out_http_headers
             .append(name, HeaderValue::from_static(val));
@@ -452,6 +457,11 @@ where
 
     #[inline]
     pub fn append_http_header_val(&mut self, name: &'static str, val: HeaderValue) {
+        self.out_http_headers.append(name, val);
+    }
+
+    #[inline]
+    pub fn append_http_header_raw(&mut self, name: HeaderName, val: HeaderValue) {
         self.out_http_headers.append(name, val);
     }
 
