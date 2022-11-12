@@ -382,6 +382,17 @@ where
         }
     }
 
+    /// Returns the first header value with a given name.
+    #[inline]
+    pub fn icap_req_header(&self, name: &str) -> Option<crate::header::HeaderValue<'_>> {
+        for hdr in self.icap_req_headers() {
+            if hdr.name == name {
+                return Some(hdr.value);
+            }
+        }
+        None
+    }
+
     #[inline]
     pub fn http_req(&self) -> &HttpRequest {
         &self.http_req
@@ -395,6 +406,17 @@ where
         }
     }
 
+    /// Returns the first header value with a given name.
+    #[inline]
+    pub fn http_req_header(&self, name: &str) -> Option<crate::header::HeaderValue<'_>> {
+        for hdr in self.http_req_headers() {
+            if hdr.name == name {
+                return Some(hdr.value);
+            }
+        }
+        None
+    }
+
     #[inline]
     pub fn http_res(&self) -> &HttpResponse {
         &self.http_res
@@ -406,6 +428,17 @@ where
             buf: &self.rbuf,
             iter: self.http_res.headers.vec.iter(),
         }
+    }
+
+    /// Returns the first header value with a given name.
+    #[inline]
+    pub fn http_res_header(&self, name: &str) -> Option<crate::header::HeaderValue<'_>> {
+        for hdr in self.http_res_headers() {
+            if hdr.name == name {
+                return Some(hdr.value);
+            }
+        }
+        None
     }
 
     #[inline]
